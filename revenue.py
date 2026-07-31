@@ -148,10 +148,10 @@ def fixed_point_solve(p, lambda1, lambda2, q, gamma, termination_time,
 
 if __name__ == "__main__":
     # parameters
-    lambda1 = 5
-    lambda2 = 4
-    q = 0.3
-    gamma = 0.5
+    lambda1 = 1
+    lambda2 = 2
+    q = 0.1
+    gamma = 0.2
     termination_time = 1000
     p = 20  
     n_reps = 20  
