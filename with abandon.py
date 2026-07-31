@@ -5,10 +5,10 @@ def generate_exp(rate):
     return random.expovariate(rate)
 
 # set parameters
-lambda1 = 5
-lambda2 = 4
-q = 0.3
-gamma = 0.5  # patience rate
+lambda1 = 1
+lambda2 = 2
+q = 0.1
+gamma = 0.2  # patience rate
 termination_time = 1000
 seed = None
 
