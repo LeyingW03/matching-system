@@ -5,9 +5,9 @@ def generate_exp(rate):
     return random.expovariate(rate)
 
 # set parameters
-lambda1=5
-lambda2=4
-q=0.3 
+lambda1=1
+lambda2=2
+q=0.1
 termination_time=1000 
 seed=None
     
