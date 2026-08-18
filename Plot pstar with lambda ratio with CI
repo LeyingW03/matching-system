@@ -1,0 +1,138 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 直接复用 GitHub 仓库里 goldenmethod.py 中已经写好的方法：
+# - golden_section_search: 对每个候选价格 p 先调用 fixed_point_solve 求出
+#   pi_m*，再算 revenue_rate，然后用黄金分割法收缩区间，找出最优价格 p*。
+# - repeated_golden_section_search: 把上面这套搜索，针对同一组
+#   (lambda1, lambda2, q, gamma) 独立重复 n_repeats 次（每次用不同的
+#   随机种子），汇总出 p* 的 mean / std / 95% CI，用来验证结果的稳健性。
+# 两个函数都不需要重写，直接 import 即可。
+# 使用前请确保本脚本与 goldenmethod.py 放在同一目录下。
+from goldenmethod import golden_section_search, repeated_golden_section_search
+
+# ---------------------------------------------------------------------
+# base case 参数（除 (lambda1, lambda2) 外，其它量都固定不变）
+# ---------------------------------------------------------------------
+q = 0.1
+gamma = 0.2
+termination_time = 1000
+n_reps = 20          # fixed_point_solve 内部每次迭代的重复仿真次数
+eval_reps = 20        # 收敛后统计 revenue_rate 的重复仿真次数
+
+p_low, p_high = 0, 100    # 黄金分割搜索的价格区间
+tol = 1               # 价格分辨率（收敛到约 1 个单位）
+
+n_repeats = 10         # 每个 (lambda1,lambda2) 组合重复搜索的次数，用来估计 p* 的置信区间
+
+# ---------------------------------------------------------------------
+# lambda1 固定为 base case 的值（=1），只让 lambda2 随比例 ratio 变化
+# ---------------------------------------------------------------------
+lambda1 = 1
+ratio_values = [0.5, 0.75, 1, 1.5, 2, 3, 5, 8]
+lambda2_values = [lambda1 * r for r in ratio_values]
+
+# ---------------------------------------------------------------------
+# 主结果：对每个 (lambda1, lambda2) 只跑一次 golden_section_search，
+# 得到 p*、revenue_rate* 用于画主曲线
+# ---------------------------------------------------------------------
+p_star_list = []
+revenue_rate_star_list = []
+
+# ---------------------------------------------------------------------
+# 验证结果：对每个 (lambda1, lambda2) 用 repeated_golden_section_search
+# 重复 n_repeats 次搜索，得到 p* 的 mean / std / 95% CI，用来验证
+# 主结果曲线的波动是否显著大于随机噪声（即结果是否可信）
+# ---------------------------------------------------------------------
+p_mean_list = []
+p_std_list = []
+ci95_list = []
+
+for ratio, lambda2 in zip(ratio_values, lambda2_values):
+    # 主结果：单次搜索
+    p_star, pi_m_star, revenue_star, revenue_rate_star, _ = golden_section_search(
+        lambda1, lambda2, q, gamma, termination_time,
+        p_low=p_low, p_high=p_high, tol=tol,
+        n_reps=n_reps, eval_reps=eval_reps, verbose=False)
+    p_star_list.append(p_star)
+    revenue_rate_star_list.append(revenue_rate_star)
+
+    # 验证结果：重复搜索，得到 mean / std / 95% CI
+    p_mean, p_std, ci95_halfwidth, p_list = repeated_golden_section_search(
+        lambda1, lambda2, q, gamma, termination_time,
+        p_low=p_low, p_high=p_high, n_repeats=n_repeats,
+        tol=tol, n_reps=n_reps, eval_reps=eval_reps,
+        use_crn=True, crn_reps=30, verbose=False)
+    p_mean_list.append(p_mean)
+    p_std_list.append(p_std)
+    ci95_list.append(ci95_halfwidth)
+
+    print(f"ratio={ratio:.2f} (lambda1={lambda1}, lambda2={lambda2:.2f}) -> "
+          f"single-run p*={p_star:.3f}, revenue_rate*={revenue_rate_star:.4f} | "
+          f"repeated({n_repeats}x): mean={p_mean:.3f}, std={p_std:.3f}, "
+          f"95% CI=[{p_mean - ci95_halfwidth:.3f}, {p_mean + ci95_halfwidth:.3f}]")
+
+# ---------------------------------------------------------------------
+# 打印汇总表格
+# ---------------------------------------------------------------------
+print("\n" + "=" * 78)
+print(f"{'ratio':>6} {'lambda2':>8} {'p* (single)':>12} {'p* mean':>9} "
+      f"{'p* std':>8} {'95% CI':>22}")
+print("-" * 78)
+for ratio, lambda2, p_star, p_mean, p_std, ci95 in zip(
+        ratio_values, lambda2_values, p_star_list, p_mean_list, p_std_list, ci95_list):
+    ci_str = f"[{p_mean - ci95:.2f}, {p_mean + ci95:.2f}]"
+    print(f"{ratio:>6.2f} {lambda2:>8.2f} {p_star:>12.3f} {p_mean:>9.3f} "
+          f"{p_std:>8.3f} {ci_str:>22}")
+print("=" * 78)
+
+# ---------------------------------------------------------------------
+# 画图 1：p* 随 ratio 变化，用误差棒画出 95% 置信区间
+# 同时叠加单次搜索的 p*，用来直观对比"单次结果"与"重复均值+置信区间"是否一致
+# ---------------------------------------------------------------------
+plt.figure(figsize=(7, 5))
+plt.errorbar(ratio_values, p_mean_list, yerr=ci95_list, fmt='o-', capsize=4,
+             label='repeated mean p* (95% CI)', color='tab:blue')
+plt.scatter(ratio_values, p_star_list, marker='x', color='tab:orange',
+            label='single-run p*', zorder=5)
+plt.axvline(x=2, color='gray', linestyle='--', linewidth=1, label='base case (ratio=2)')
+plt.xlabel("ratio = lambda2 / lambda1")
+plt.ylabel("optimal price p*")
+plt.title("Optimal price p* vs supply-demand ratio, with 95% CI\n"
+          f"(lambda1={lambda1}, q={q}, gamma={gamma}, n_repeats={n_repeats})")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("pstar_vs_lambda_ratio_with_ci.png", dpi=150)
+plt.show()
+
+# ---------------------------------------------------------------------
+# 画图 2：p* 的标准差随 ratio 变化，直接展示"结果的稳定性"本身
+# 如果 std 相对 p* 的量级很小，说明结果稳健、噪声可以忽略
+# ---------------------------------------------------------------------
+plt.figure(figsize=(7, 5))
+plt.plot(ratio_values, p_std_list, marker='o', color='tab:green')
+plt.xlabel("ratio = lambda2 / lambda1")
+plt.ylabel("std of p* across repeated searches")
+plt.title(f"Standard deviation of p* vs ratio ({n_repeats} repeats each)\n"
+          f"(lambda1={lambda1}, q={q}, gamma={gamma})")
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("pstar_std_vs_lambda_ratio.png", dpi=150)
+plt.show()
+
+# ---------------------------------------------------------------------
+# 画图 3：revenue_rate* 随 ratio 变化（沿用之前的主结果曲线）
+# ---------------------------------------------------------------------
+plt.figure(figsize=(7, 5))
+plt.plot(ratio_values, revenue_rate_star_list, marker='o', color='tab:red')
+plt.axvline(x=2, color='gray', linestyle='--', linewidth=1, label='base case (ratio=2)')
+plt.xlabel("ratio = lambda2 / lambda1")
+plt.ylabel("optimal revenue rate (at p*)")
+plt.title("Optimal revenue rate vs supply-demand ratio\n"
+          f"(lambda1={lambda1}, q={q}, gamma={gamma})")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("revenue_rate_star_vs_lambda_ratio.png", dpi=150)
+plt.show()
